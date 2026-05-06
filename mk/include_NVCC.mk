@@ -5,6 +5,8 @@ ifeq ($(strip $(ENABLE_OPENMP)),true)
 OPENMP   = -Xcompiler "-fopenmp"
 endif
 
+ENABLE_CUDA = true
+
 VERSION  = --version
 CFLAGS   = -O3 -std=c++17 $(CUDA_ARCH) $(OPENMP)
 LFLAGS   = $(OPENMP)
