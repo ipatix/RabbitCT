@@ -28,6 +28,7 @@ Several algorithm variants are included in this repository:
 - **LolaOPT** -- further optimized with zero-padded projection images (eliminates bounds checking) and collapse(2) OpenMP scheduling
 - **LolaASM** -- hand-written SIMD assembly kernels (SSE/AVX/AVX512/NEON) with cache-blocking
 - **LolaISPC** -- ISPC-vectorized kernel using `foreach` for data-parallel SIMD (requires ISPC compiler)
+- **LolaCUDA** -- naive CUDA implementation, based on LolaBunny
 
 ## Build
 
@@ -37,6 +38,7 @@ Several algorithm variants are included in this repository:
 - Optional: OpenMP runtime (for the LolaOMP/LolaOPT/LolaASM/LolaISPC algorithms)
 - Optional: [Intel ISPC](https://ispc.github.io/) compiler (for the LolaISPC algorithm)
 - Optional: [LIKWID](https://github.com/RRZE-HPC/likwid) (for hardware performance counter measurements)
+- Optional: CUDA (for GPU acceleration)
 
 ### Configuration
 
@@ -273,6 +275,12 @@ Uses the [Intel ISPC](https://ispc.github.io/) compiler to auto-vectorize the
 inner backprojection loop via ISPC's `foreach` construct. The ISPC target ISA is
 selected automatically based on the `SIMD` setting. Requires `ENABLE_ISPC=true`
 in `config.mk` and the `ispc` compiler in `PATH`. Requires `-a`.
+
+### LolaCUDA
+
+A naive implementation in CUDA based on LolaBunny. No fancy clipping is done.
+CPU - GPU transfers are part of the main algorithm function, thus are included
+in the measurements.
 
 ## Input data
 
