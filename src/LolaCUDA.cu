@@ -5,30 +5,34 @@
 #include <memory>
 #include <thrust/device_vector.h>
 
-static std::unique_ptr<thrust::device_vector<double>> gpuMatrices;
+static std::unique_ptr<thrust::device_vector<float>> gpuMatrices;
 static std::unique_ptr<thrust::device_vector<float>> gpuImages;
 static std::unique_ptr<thrust::device_vector<float>> gpuVoxels;
 
 extern "C" int lolaCudaPrepare(RabbitCtGlobalData *rcgd)
 {
-    gpuMatrices = std::make_unique<thrust::device_vector<double>>();
+    printf("START 1\n");
+    gpuMatrices = std::make_unique<thrust::device_vector<float>>();
     gpuImages = std::make_unique<thrust::device_vector<float>>();
     gpuVoxels = std::make_unique<thrust::device_vector<float>>(rcgd->problemSize * rcgd->problemSize * rcgd->problemSize, 0.0f);
+    printf("START 2\n");
     return 1;
 }
 
 extern "C" int lolaCudaFinish(RabbitCtGlobalData *rcgd)
 {
+    printf("END 1\n");
     thrust::copy(gpuVoxels->begin(), gpuVoxels->end(), rcgd->volumeData);
     cudaDeviceSynchronize();
     gpuMatrices.reset();
     gpuImages.reset();
     gpuVoxels.reset();
+    printf("END 2\n");
     return 1;
 }
 
 __global__ static void kernel(
-        double *matrix,
+        float *matrix,
         float *image,
         uint32_t imageWidth,
         uint32_t imageHeight,
@@ -43,21 +47,21 @@ __global__ static void kernel(
     const uint32_t voxelIdxY = (voxelIdx / voxelDim) % voxelDim;
     const uint32_t voxelIdxZ = voxelIdx / (voxelDim * voxelDim);
 
-    const double x = O_Index + voxelIdxX * voxelSize;
-    const double y = O_Index + voxelIdxY * voxelSize;
-    const double z = O_Index + voxelIdxZ * voxelSize;
+    const float x = O_Index + voxelIdxX * voxelSize;
+    const float y = O_Index + voxelIdxY * voxelSize;
+    const float z = O_Index + voxelIdxZ * voxelSize;
 
-    const double w = matrix[2] * x + matrix[5] * y + matrix[8] * z + matrix[11];
-    const double u = (matrix[0] * x + matrix[3] * y + matrix[6] * z + matrix[9]) / w;
-    const double v = (matrix[1] * x + matrix[4] * y + matrix[7] * z + matrix[10]) / w;
+    const float w = matrix[2] * x + matrix[5] * y + matrix[8] * z + matrix[11];
+    const float u = (matrix[0] * x + matrix[3] * y + matrix[6] * z + matrix[9]) / w;
+    const float v = (matrix[1] * x + matrix[4] * y + matrix[7] * z + matrix[10]) / w;
 
     const int32_t imgCoordX0 = static_cast<int32_t>(u);
     const int32_t imgCoordY0 = static_cast<int32_t>(v);
     const int32_t imgCoordX1 = imgCoordX0 + 1;
     const int32_t imgCoordY1 = imgCoordY0 + 1;
 
-    double alpha = u - static_cast<double>(imgCoordX0);
-    double beta = v - static_cast<double>(imgCoordY0);
+    const float alpha = u - static_cast<float>(imgCoordX0);
+    const float beta = v - static_cast<float>(imgCoordY0);
 
     float imgDataX0Y0 = 0.0f, imgDataX0Y1 = 0.0f, imgDataX1Y0 = 0.0f, imgDataX1Y1 = 0.0f;
     if (imgCoordX0 >= 0 && imgCoordX0 < imageWidth) {
@@ -98,11 +102,12 @@ extern "C" int lolaCudaBackprojection(RabbitCtGlobalData *rcgd)
     gpuImages->resize(rcgd->numberOfProjections * imageElemCount, 0.0f);
 
     for (size_t i = 0; i < rcgd->numberOfProjections; i++) {
-        const double *cpuMatrixStart = rcgd->projectionBuffer[i].matrix;
-        const double *cpuMatrixEnd = cpuMatrixStart + matrixElemCount;
+        std::vector<float> cpuMatrixSingle(matrixElemCount);
+        for (size_t j = 0; j < cpuMatrixSingle.size(); j++)
+            cpuMatrixSingle[j] = static_cast<float>(rcgd->projectionBuffer[i].matrix[j]);
         const auto gpuMatrixStart = gpuMatrices->begin() + (matrixElemCount * i);
 
-        thrust::copy(cpuMatrixStart, cpuMatrixEnd, gpuMatrixStart);
+        thrust::copy(cpuMatrixSingle.begin(), cpuMatrixSingle.end(), gpuMatrixStart);
 
         const float *cpuImageStart = rcgd->projectionBuffer[i].image;
         const float *cpuImageEnd = cpuImageStart + imageElemCount;
