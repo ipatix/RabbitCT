@@ -11,23 +11,19 @@ static std::unique_ptr<thrust::device_vector<float>> gpuVoxels;
 
 extern "C" int lolaCudaPrepare(RabbitCtGlobalData *rcgd)
 {
-    printf("START 1\n");
     gpuMatrices = std::make_unique<thrust::device_vector<float>>();
     gpuImages = std::make_unique<thrust::device_vector<float>>();
     gpuVoxels = std::make_unique<thrust::device_vector<float>>(rcgd->problemSize * rcgd->problemSize * rcgd->problemSize, 0.0f);
-    printf("START 2\n");
     return 1;
 }
 
 extern "C" int lolaCudaFinish(RabbitCtGlobalData *rcgd)
 {
-    printf("END 1\n");
     thrust::copy(gpuVoxels->begin(), gpuVoxels->end(), rcgd->volumeData);
     cudaDeviceSynchronize();
     gpuMatrices.reset();
     gpuImages.reset();
     gpuVoxels.reset();
-    printf("END 2\n");
     return 1;
 }
 
