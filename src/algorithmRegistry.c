@@ -34,6 +34,10 @@ extern int lolaIspcFinish(RabbitCtGlobalData *);
 extern int lolaCudaPrepare(RabbitCtGlobalData *);
 extern int lolaCudaBackprojection(RabbitCtGlobalData *);
 extern int lolaCudaFinish(RabbitCtGlobalData *);
+
+extern int lolaCudaTexPrepare(RabbitCtGlobalData *);
+extern int lolaCudaTexBackprojection(RabbitCtGlobalData *);
+extern int lolaCudaTexFinish(RabbitCtGlobalData *);
 #endif
 
 /* ---- global function pointer variables ---- */
@@ -52,6 +56,7 @@ static const AlgorithmEntryType S_ALGORITHMS[] = {
 #endif
 #ifdef ENABLE_CUDA
   { "LolaCUDA",  lolaCudaPrepare,  lolaCudaBackprojection,  lolaCudaFinish  },
+  { "LolaCUDATex", lolaCudaTexPrepare, lolaCudaTexBackprojection, lolaCudaTexFinish  },
 #endif
   { NULL,        NULL,             NULL,                    NULL            }  /* sentinel */
 };
