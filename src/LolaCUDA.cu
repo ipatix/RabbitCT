@@ -77,7 +77,7 @@ __global__ static void kernel(
     const float imgDataY1 = imgDataX0Y1 + alpha * (imgDataX1Y1 - imgDataX0Y1);
     const float imgData = imgDataY0 + beta * (imgDataY1 - imgDataY0);
 
-    const float voxelData = static_cast<float>(1.0 / (w * w) * imgData);
+    const float voxelData = static_cast<float>(1.0f / (w * w) * imgData);
     float *voxel = &voxels[voxelIdxZ * voxelDim * voxelDim + voxelIdxY * voxelDim + voxelIdxX];
     *voxel += voxelData;
 }
@@ -94,7 +94,7 @@ extern "C" int lolaCudaBackprojection(RabbitCtGlobalData *rcgd)
     const size_t numThreadBlocks= numThreads / threadBlockSize;
 
     // 1. Upload data to GPU
-    gpuMatrices->resize(rcgd->numberOfProjections * matrixElemCount, 0.0);
+    gpuMatrices->resize(rcgd->numberOfProjections * matrixElemCount, 0.0f);
     gpuImages->resize(rcgd->numberOfProjections * imageElemCount, 0.0f);
 
     for (size_t i = 0; i < rcgd->numberOfProjections; i++) {
