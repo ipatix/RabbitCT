@@ -10,6 +10,9 @@
 static VkInstance vkInstance;
 static VkDebugUtilsMessengerEXT vkDebugUtilsMessenger;
 static VkPhysicalDevice vkPhysicalDevice;
+static size_t graphicsQueueFamily;
+static VkDevice vkDevice;
+static VkQueue vkQueue;
 
 #define ARRAY_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -161,7 +164,7 @@ static size_t getPhysicalDevicePriority(VkPhysicalDevice device)
     exit(EXIT_FAILURE);
 }
 
-static void lolaVkDevicePick(void)
+static void lolaVkPhysicalDeviceSelect(void)
 {
     uint32_t deviceCount;
     VK_CALL(vkEnumeratePhysicalDevices, vkInstance, &deviceCount, NULL);
@@ -177,11 +180,12 @@ static void lolaVkDevicePick(void)
         if (getPhysicalDevicePriority(devices[i]) < getPhysicalDevicePriority(deviceCandidate))
             deviceCandidate = devices[i];
     }
-
     if (!deviceCandidate) {
         fprintf(stderr, "No device found\n");
         exit(EXIT_FAILURE);
     }
+
+    vkPhysicalDevice = deviceCandidate;
 
     VkPhysicalDeviceProperties2 props = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
@@ -193,16 +197,74 @@ static void lolaVkDevicePick(void)
     free(devices);
 }
 
+static void lolaVkQueueFamilyFind(void)
+{
+    uint32_t queueFamilyCount;
+    vkGetPhysicalDeviceQueueFamilyProperties2(vkPhysicalDevice, &queueFamilyCount, NULL);
+
+    VkQueueFamilyProperties2 *queueFamilies = calloc(queueFamilyCount, sizeof(*queueFamilies));
+    if (!queueFamilies)
+        pdie("calloc");
+
+    for (size_t i = 0; i < queueFamilyCount; i++)
+        queueFamilies[i].sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
+
+    vkGetPhysicalDeviceQueueFamilyProperties2(vkPhysicalDevice, &queueFamilyCount, queueFamilies);
+
+    bool found = false;
+    for (size_t i = 0; i < queueFamilyCount; i++) {
+        if (queueFamilies[i].queueFamilyProperties.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            graphicsQueueFamily = i;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        fprintf(stderr, "Unable to find graphics queue family out of %u queue families\n", queueFamilyCount);
+        exit(EXIT_FAILURE);
+    }
+
+    free(queueFamilies);
+}
+
+void lolaVkCreateLogicalDevice(void)
+{
+    const float queuePriority = 1.0f;
+
+    VkDeviceQueueCreateInfo queueCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = graphicsQueueFamily,
+        .queueCount = 1,
+        .pQueuePriorities = &queuePriority,
+    };
+
+    VkPhysicalDeviceFeatures deviceFeatures = { 0 };
+
+    VkDeviceCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pQueueCreateInfos = &queueCreateInfo,
+        .queueCreateInfoCount = 1,
+        .pEnabledFeatures = &deviceFeatures,
+    };
+
+    VK_CALL(vkCreateDevice, vkPhysicalDevice, &createInfo, NULL, &vkDevice);
+    vkGetDeviceQueue(vkDevice, graphicsQueueFamily, 0, &vkQueue);
+}
+
 int lolaVkPrepare(RabbitCtGlobalData *rcgd)
 {
     lolaVkCreateInstance();
     lolaVkDebugCreate();
-    lolaVkDevicePick();
+    lolaVkPhysicalDeviceSelect();
+    lolaVkQueueFamilyFind();
+    lolaVkCreateLogicalDevice();
     return 1;
 }
 
 int lolaVkFinish(RabbitCtGlobalData *rcgd)
 {
+    vkDestroyDevice(vkDevice, NULL);
     lolaVkDebugDestroy();
     vkDestroyInstance(vkInstance, NULL);
     return 1;
