@@ -30,6 +30,12 @@ extern int lolaIspcBackprojection(RabbitCtGlobalData *);
 extern int lolaIspcFinish(RabbitCtGlobalData *);
 #endif
 
+#ifdef ENABLE_VULKAN
+extern int lolaVkPrepare(RabbitCtGlobalData *);
+extern int lolaVkBackprojection(RabbitCtGlobalData *);
+extern int lolaVkFinish(RabbitCtGlobalData *);
+#endif
+
 #ifdef ENABLE_CUDA
 extern int lolaCudaPrepare(RabbitCtGlobalData *);
 extern int lolaCudaBackprojection(RabbitCtGlobalData *);
@@ -57,6 +63,9 @@ static const AlgorithmEntryType S_ALGORITHMS[] = {
 #ifdef ENABLE_CUDA
   { "LolaCUDA",  lolaCudaPrepare,  lolaCudaBackprojection,  lolaCudaFinish  },
   { "LolaCUDATex", lolaCudaTexPrepare, lolaCudaTexBackprojection, lolaCudaTexFinish  },
+#endif
+#ifdef ENABLE_VULKAN
+  { "LolaVK",    lolaVkPrepare,    lolaVkBackprojection,    lolaVkFinish    },
 #endif
   { NULL,        NULL,             NULL,                    NULL            }  /* sentinel */
 };

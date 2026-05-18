@@ -51,6 +51,13 @@ else
 OBJ       := $(filter-out $(BUILD_DIR)/LolaISPC.o,$(OBJ))
 endif
 
+ifeq ($(ENABLE_VULKAN),true)
+DEFINES   += -DENABLE_VULKAN
+LIBS      += -lvulkan
+else
+OBJ       := $(filter-out $(BUILD_DIR)/LolaVK.o,$(OBJ))
+endif
+
 ifeq ($(ENABLE_CUDA),true)
 OBJ       += $(patsubst $(SRC_DIR)/%.cu, $(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR)/*.cu))
 endif
