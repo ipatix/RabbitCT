@@ -9,6 +9,9 @@
 
 static VkInstance vkInstance;
 static VkDebugUtilsMessengerEXT vkDebugUtilsMessenger;
+static VkPhysicalDevice vkPhysicalDevice;
+
+#define ARRAY_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define VK_CALL(func, ...) \
     do { \
@@ -43,7 +46,7 @@ static void lolaVkCreateInstance(void)
 
     // Check if required layers are available
     bool enableLayers = true;
-    for (size_t i = 0; i < sizeof(enabledLayers) / sizeof(enabledLayers[0]); i++) {
+    for (size_t i = 0; i < ARRAY_COUNT(enabledLayers); i++) {
         bool found = false;
         for (size_t j = 0; j < layerCount; j++) {
             if (strcmp(properties[j].layerName, enabledLayers[i]) == 0) {
@@ -67,7 +70,7 @@ static void lolaVkCreateInstance(void)
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
         .pEngineName = "N/A",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = VK_API_VERSION_1_0,
+        .apiVersion = VK_API_VERSION_1_1,
     };
 
     static const char *enabledExtensions[] = {
@@ -77,13 +80,13 @@ static void lolaVkCreateInstance(void)
     VkInstanceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &appInfo,
-        .enabledExtensionCount = sizeof(enabledExtensions) / sizeof(enabledExtensions[0]),
+        .enabledExtensionCount = ARRAY_COUNT(enabledExtensions),
         .ppEnabledExtensionNames = enabledExtensions,
     };
 
     // Enable layers if required
     if (enableLayers) {
-        createInfo.enabledLayerCount = sizeof(enabledLayers) / sizeof(enabledLayers[0]);
+        createInfo.enabledLayerCount = ARRAY_COUNT(enabledLayers);
         createInfo.ppEnabledLayerNames = enabledLayers;
     }
 
@@ -131,10 +134,70 @@ static void lolaVkDebugDestroy(void)
     func(vkInstance, vkDebugUtilsMessenger, NULL);
 }
 
+static size_t getPhysicalDevicePriority(VkPhysicalDevice device)
+{
+    static const VkPhysicalDeviceType priorityList[] = {
+        VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
+        VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+        VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU,
+        VK_PHYSICAL_DEVICE_TYPE_CPU,
+        VK_PHYSICAL_DEVICE_TYPE_OTHER,
+    };
+
+    if (!device)
+        return ARRAY_COUNT(priorityList);
+
+    VkPhysicalDeviceProperties2 props = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+    };
+    vkGetPhysicalDeviceProperties2(device, &props);
+
+    for (size_t i = 0; i < ARRAY_COUNT(priorityList); i++) {
+        if (props.properties.deviceType == priorityList[i])
+            return i;
+    }
+
+    fprintf(stderr, "Invalid device type: %d\n", props.properties.deviceType);
+    exit(EXIT_FAILURE);
+}
+
+static void lolaVkDevicePick(void)
+{
+    uint32_t deviceCount;
+    VK_CALL(vkEnumeratePhysicalDevices, vkInstance, &deviceCount, NULL);
+
+    VkPhysicalDevice *devices = calloc(deviceCount, sizeof(*devices));
+    if (!devices)
+        pdie("calloc");
+
+    VK_CALL(vkEnumeratePhysicalDevices, vkInstance, &deviceCount, devices);
+
+    VkPhysicalDevice deviceCandidate = NULL;
+    for (size_t i = 0; i < deviceCount; i++) {
+        if (getPhysicalDevicePriority(devices[i]) < getPhysicalDevicePriority(deviceCandidate))
+            deviceCandidate = devices[i];
+    }
+
+    if (!deviceCandidate) {
+        fprintf(stderr, "No device found\n");
+        exit(EXIT_FAILURE);
+    }
+
+    VkPhysicalDeviceProperties2 props = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+    };
+    vkGetPhysicalDeviceProperties2(deviceCandidate, &props);
+
+    printf("selected device: %s\n", props.properties.deviceName);
+
+    free(devices);
+}
+
 int lolaVkPrepare(RabbitCtGlobalData *rcgd)
 {
     lolaVkCreateInstance();
     lolaVkDebugCreate();
+    lolaVkDevicePick();
     return 1;
 }
 
