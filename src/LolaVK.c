@@ -13,6 +13,7 @@ static VkPhysicalDevice vkPhysicalDevice;
 static size_t graphicsQueueFamily;
 static VkDevice vkDevice;
 static VkQueue vkQueue;
+static VkImage *vkVoxelBuffers;
 
 #define ARRAY_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -101,8 +102,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-    void *pUserData) {
-
+    void *pUserData)
+{
     fprintf(stderr, "validation layer: %s\n", pCallbackData->pMessage);
 
     return VK_FALSE;
@@ -228,7 +229,7 @@ static void lolaVkQueueFamilyFind(void)
     free(queueFamilies);
 }
 
-void lolaVkCreateLogicalDevice(void)
+static void lolaVkCreateLogicalDevice(void)
 {
     const float queuePriority = 1.0f;
 
@@ -252,6 +253,37 @@ void lolaVkCreateLogicalDevice(void)
     vkGetDeviceQueue(vkDevice, graphicsQueueFamily, 0, &vkQueue);
 }
 
+static void lolaVkCreateResources(RabbitCtGlobalData *rcgd)
+{
+    vkVoxelBuffers = calloc(rcgd->problemSize, sizeof(*vkVoxelBuffers));
+    if (!vkVoxelBuffers)
+        pdie("calloc");
+
+    for (size_t i = 0; i < rcgd->problemSize; i++) {
+        VkImageCreateInfo voxelsImageCreateInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .extent = { rcgd->problemSize, rcgd->problemSize, 1 },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        };
+        VK_CALL(vkCreateImage, vkDevice, &voxelsImageCreateInfo, NULL, &vkVoxelBuffers[i]);
+    }
+}
+
+static void lolaVkDestroyResources(RabbitCtGlobalData *rcgd)
+{
+    for (size_t i = 0; i < rcgd->problemSize; i++)
+        vkDestroyImage(vkDevice, vkVoxelBuffers[i], NULL);
+
+    free(vkVoxelBuffers);
+}
+
 int lolaVkPrepare(RabbitCtGlobalData *rcgd)
 {
     lolaVkCreateInstance();
@@ -259,11 +291,13 @@ int lolaVkPrepare(RabbitCtGlobalData *rcgd)
     lolaVkPhysicalDeviceSelect();
     lolaVkQueueFamilyFind();
     lolaVkCreateLogicalDevice();
+    lolaVkCreateResources(rcgd);
     return 1;
 }
 
 int lolaVkFinish(RabbitCtGlobalData *rcgd)
 {
+    lolaVkDestroyResources(rcgd);
     vkDestroyDevice(vkDevice, NULL);
     lolaVkDebugDestroy();
     vkDestroyInstance(vkInstance, NULL);
