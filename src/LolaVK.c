@@ -15,6 +15,9 @@ static VkDevice vkDevice;
 static VkQueue vkQueue;
 static VkImage *vkVoxelBuffers;
 static VkImageView *vkVoxelViews;
+static VkShaderModule vkVertShaderModule;
+static VkShaderModule vkFragShaderModule;
+static VkPipelineLayout vkPipelineLayout;
 
 #define ARRAY_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -314,6 +317,151 @@ static void lolaVkDestroyResources(RabbitCtGlobalData *rcgd)
         vkDestroyImage(vkDevice, vkVoxelBuffers[i], NULL);
 
     free(vkVoxelBuffers);
+}
+
+extern unsigned char LolaVK_frag_spv[];
+extern unsigned int LolaVK_frag_spv_len;
+extern unsigned char LolaVK_vert_spv[];
+extern unsigned int LolaVK_vert_spv_len;
+
+static void lolaVkCreateShaders(const RabbitCtGlobalData *rcgd)
+{
+    // Shader modules
+    VkShaderModuleCreateInfo vertCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = LolaVK_vert_spv_len,
+        .pCode = (const uint32_t *)LolaVK_vert_spv,
+    };
+
+    VK_CALL(vkCreateShaderModule, vkDevice, &vertCreateInfo, NULL, &vkVertShaderModule);
+
+    VkShaderModuleCreateInfo fragCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = LolaVK_frag_spv_len,
+        .pCode = (const uint32_t *)LolaVK_frag_spv,
+    };
+
+    VK_CALL(vkCreateShaderModule, vkDevice, &fragCreateInfo, NULL, &vkFragShaderModule);
+
+    // Shader stages
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vkVertShaderModule,
+        .pName = "main",
+    };
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = vkFragShaderModule,
+        .pName = "main",
+    };
+
+    // Dynamic state
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = ARRAY_COUNT(dynamicStates),
+        .pDynamicStates = dynamicStates,
+    };
+
+    // Vertex input
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 0,
+        .pVertexBindingDescriptions = NULL, // Optional
+        .vertexAttributeDescriptionCount = 0,
+        .pVertexAttributeDescriptions = NULL, // Optional
+    };
+
+    // Input assembly
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE,
+    };
+
+    // Viewport
+    VkViewport viewport = {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = (float) rcgd->problemSize,
+        .height = (float) rcgd->problemSize,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+
+    VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = {rcgd->problemSize, rcgd->problemSize},
+    };
+
+    VkPipelineViewportStateCreateInfo viewportState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = &viewport,
+        .scissorCount = 1,
+        .pScissors = &scissor,
+    };
+
+    // Rasterizer
+    VkPipelineRasterizationStateCreateInfo rasterizer = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .lineWidth = 1.0f,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .depthBiasEnable = VK_FALSE,
+        .depthBiasConstantFactor = 0.0f,
+        .depthBiasClamp = 0.0f,
+        .depthBiasSlopeFactor = 0.0f,
+    };
+
+    // Blending
+    VkPipelineColorBlendAttachmentState colorBlendAttachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT,
+        .blendEnable = VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE, // Optional
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO, // Optional
+        .colorBlendOp = VK_BLEND_OP_ADD, // Optional
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE, // Optional
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO, // Optional
+        .alphaBlendOp = VK_BLEND_OP_ADD, // Optional
+    };
+
+    VkPipelineColorBlendStateCreateInfo colorBlending = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = VK_FALSE,
+        .logicOp = VK_LOGIC_OP_COPY, // Optional
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachment,
+        .blendConstants = { 0.0f, 0.0f, 0.0f, 0.0f }, // Optional
+    };
+
+    // Pipeline
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 0, // Optional
+        .pSetLayouts = NULL, // Optional
+        .pushConstantRangeCount = 0, // Optional
+        .pPushConstantRanges = NULL, // Optional
+    };
+
+    VK_CALL(vkCreatePipelineLayout, vkDevice, &pipelineLayoutInfo, NULL, &vkPipelineLayout);
+}
+
+static void lolaVkDestroyShaders(void)
+{
+    vkDestroyPipelineLayout(vkDevice, vkPipelineLayout, NULL);
+    vkDestroyShaderModule(vkDevice, vkFragShaderModule, NULL);
+    vkDestroyShaderModule(vkDevice, vkVertShaderModule, NULL);
 }
 
 int lolaVkPrepare(RabbitCtGlobalData *rcgd)
