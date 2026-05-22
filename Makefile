@@ -54,6 +54,8 @@ endif
 ifeq ($(ENABLE_VULKAN),true)
 DEFINES   += -DENABLE_VULKAN
 LIBS      += -lvulkan
+OBJ       += $(patsubst $(SRC_DIR)/%.frag, $(BUILD_DIR)/%.frag.o,$(wildcard $(SRC_DIR)/*.frag))
+OBJ       += $(patsubst $(SRC_DIR)/%.vert, $(BUILD_DIR)/%.vert.o,$(wildcard $(SRC_DIR)/*.vert))
 else
 OBJ       := $(filter-out $(BUILD_DIR)/LolaVK.o,$(OBJ))
 endif
@@ -136,6 +138,32 @@ $(BUILD_DIR)/fastRabbit.s: $(SRC_DIR)/fastRabbit.ispc
 $(BUILD_DIR)/LolaISPC.o: $(BUILD_DIR)/fastRabbit_ispc.h
 $(BUILD_DIR)/LolaISPC.s: $(BUILD_DIR)/fastRabbit_ispc.h
 ASM += $(BUILD_DIR)/fastRabbit.s
+endif
+
+ifeq ($(ENABLE_VULKAN),true)
+$(BUILD_DIR)/%.frag.o: $(BUILD_DIR)/%.frag.c
+	$(info ===>  COMPILE  $@)
+	$(Q)$(CC) -c $(CPPFLAGS) $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/%.vert.o: $(BUILD_DIR)/%.vert.c
+	$(info ===>  COMPILE  $@)
+	$(Q)$(CC) -c $(CPPFLAGS) $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/%.frag.spv: $(SRC_DIR)/%.frag
+	$(info ===>  GLSLC  $<)
+	$(Q)glslc -fshader-stage=frag -o $@ $<
+
+$(BUILD_DIR)/%.vert.spv: $(SRC_DIR)/%.vert
+	$(info ===>  GLSLC  $<)
+	$(Q)glslc -fshader-stage=vert -o $@ $<
+
+$(BUILD_DIR)/%.frag.c: $(BUILD_DIR)/%.frag.spv
+	$(info ===>  XXD $<)
+	$(Q)xxd -n $(notdir $<) -i $< > $@
+
+$(BUILD_DIR)/%.vert.c: $(BUILD_DIR)/%.vert.spv
+	$(info ===>  XXD $<)
+	$(Q)xxd -n $(notdir $<) -i $< > $@
 endif
 
 .PHONY: clean distclean info asm format
