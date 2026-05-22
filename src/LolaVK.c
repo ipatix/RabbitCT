@@ -14,6 +14,7 @@ static size_t graphicsQueueFamily;
 static VkDevice vkDevice;
 static VkQueue vkQueue;
 static VkImage *vkVoxelBuffers;
+static VkImageView *vkVoxelViews;
 
 #define ARRAY_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -263,7 +264,7 @@ static void lolaVkCreateResources(RabbitCtGlobalData *rcgd)
         VkImageCreateInfo voxelsImageCreateInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .imageType = VK_IMAGE_TYPE_2D,
-            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .format = VK_FORMAT_R32_SFLOAT,
             .extent = { rcgd->problemSize, rcgd->problemSize, 1 },
             .mipLevels = 1,
             .arrayLayers = 1,
@@ -274,10 +275,41 @@ static void lolaVkCreateResources(RabbitCtGlobalData *rcgd)
         };
         VK_CALL(vkCreateImage, vkDevice, &voxelsImageCreateInfo, NULL, &vkVoxelBuffers[i]);
     }
+
+    vkVoxelViews = calloc(rcgd->problemSize, sizeof(*vkVoxelViews));
+    if (!vkVoxelBuffers)
+        pdie("calloc");
+
+    for (size_t i = 0; i < rcgd->problemSize; i++) {
+        VkImageViewCreateInfo voxelsImageViewCreateInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = vkVoxelBuffers[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_R32_SFLOAT,
+            .components = {
+                .r = VK_COMPONENT_SWIZZLE_R,
+                .g = VK_COMPONENT_SWIZZLE_R,
+                .b = VK_COMPONENT_SWIZZLE_R,
+                .a = VK_COMPONENT_SWIZZLE_R,
+            },
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+
+        VK_CALL(vkCreateImageView, vkDevice, &voxelsImageViewCreateInfo, NULL, &vkVoxelViews[i]);
+    }
 }
 
 static void lolaVkDestroyResources(RabbitCtGlobalData *rcgd)
 {
+    for (size_t i = 0; i < rcgd->problemSize; i++)
+        vkDestroyImageView(vkDevice, vkVoxelViews[i], NULL);
+
     for (size_t i = 0; i < rcgd->problemSize; i++)
         vkDestroyImage(vkDevice, vkVoxelBuffers[i], NULL);
 
