@@ -22,6 +22,8 @@ static VkShaderModule vkFragShaderModule;
 static VkPipelineLayout vkPipelineLayout;
 static VkRenderPass vkRenderPass;
 static VkPipeline vkPipeline;
+static VkCommandPool vkCommandPool;
+static VkCommandBuffer vkCommandBuffer;
 
 #define ARRAY_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -626,6 +628,32 @@ static void lolaVkDestroyFramebuffers(RabbitCtGlobalData *rcgd)
     free(vkVoxelFramebuffers);
 }
 
+static void lolaVkCreateCommandPool(void)
+{
+    VkCommandPoolCreateInfo poolInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = graphicsQueueFamily,
+    };
+
+    VK_CALL(vkCreateCommandPool, vkDevice, &poolInfo, NULL, &vkCommandPool);
+
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = vkCommandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+
+    VK_CALL(vkAllocateCommandBuffers, vkDevice, &allocInfo, &vkCommandBuffer);
+
+}
+
+static void lolaVkDestroyCommandPool(void)
+{
+    vkDestroyCommandPool(vkDevice, vkCommandPool, NULL);
+}
+
 int lolaVkPrepare(RabbitCtGlobalData *rcgd)
 {
     lolaVkCreateInstance();
@@ -636,11 +664,13 @@ int lolaVkPrepare(RabbitCtGlobalData *rcgd)
     lolaVkCreateResources(rcgd);
     lolaVkCreatePipeline(rcgd);
     lolaVkCreateFramebuffers(rcgd);
+    lolaVkCreateCommandPool();
     return 1;
 }
 
 int lolaVkFinish(RabbitCtGlobalData *rcgd)
 {
+    lolaVkDestroyCommandPool();
     lolaVkDestroyFramebuffers(rcgd);
     lolaVkDestroyPipeline();
     lolaVkDestroyResources(rcgd);
