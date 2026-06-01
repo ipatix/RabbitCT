@@ -14,10 +14,14 @@ static size_t graphicsQueueFamily;
 static VkDevice vkDevice;
 static VkQueue vkQueue;
 static VkImage *vkVoxelBuffers;
+static VkDeviceMemory vkVoxelMemory;
+static VkFramebuffer *vkVoxelFramebuffers;
 static VkImageView *vkVoxelViews;
 static VkShaderModule vkVertShaderModule;
 static VkShaderModule vkFragShaderModule;
 static VkPipelineLayout vkPipelineLayout;
+static VkRenderPass vkRenderPass;
+static VkPipeline vkPipeline;
 
 #define ARRAY_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -42,7 +46,7 @@ static void lolaVkCreateInstance(void)
     uint32_t layerCount;
     VK_CALL(vkEnumerateInstanceLayerProperties, &layerCount, NULL);
 
-    VkLayerProperties *properties = calloc(sizeof(*properties), layerCount);
+    VkLayerProperties *properties = calloc(layerCount, sizeof(*properties));
     if (!properties)
         pdie("calloc");
 
@@ -108,6 +112,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
     void *pUserData)
 {
+    (void)messageSeverity;
+    (void)messageType;
+    (void)pUserData;
+
     fprintf(stderr, "validation layer: %s\n", pCallbackData->pMessage);
 
     return VK_FALSE;
@@ -257,8 +265,24 @@ static void lolaVkCreateLogicalDevice(void)
     vkGetDeviceQueue(vkDevice, graphicsQueueFamily, 0, &vkQueue);
 }
 
+static uint32_t lolaVkFindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(vkPhysicalDevice, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if (typeFilter & (1 << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            return i;
+    }
+
+    fprintf(stderr, "LolaVK: Unable to find requested memory type: %x\n", typeFilter);
+    exit(EXIT_FAILURE);
+    return 0;
+}
+
 static void lolaVkCreateResources(RabbitCtGlobalData *rcgd)
 {
+    // Create VkImages
     vkVoxelBuffers = calloc(rcgd->problemSize, sizeof(*vkVoxelBuffers));
     if (!vkVoxelBuffers)
         pdie("calloc");
@@ -279,6 +303,38 @@ static void lolaVkCreateResources(RabbitCtGlobalData *rcgd)
         VK_CALL(vkCreateImage, vkDevice, &voxelsImageCreateInfo, NULL, &vkVoxelBuffers[i]);
     }
 
+    // Allocate memory for images
+    if (rcgd->problemSize == 0) {
+        fprintf(stderr, "LolaVK: Problem size must be greater than 0\n");
+        exit(EXIT_FAILURE);
+    }
+
+    VkMemoryRequirements2 memRequirements = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+    };
+    VkImageMemoryRequirementsInfo2 memReqInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+        .image = vkVoxelBuffers[0],
+    };
+    vkGetImageMemoryRequirements2(vkDevice, &memReqInfo, &memRequirements);
+
+    VkDeviceSize alignedSize = memRequirements.memoryRequirements.size;
+    alignedSize = alignedSize + memRequirements.memoryRequirements.alignment - 1;
+    alignedSize /= memRequirements.memoryRequirements.alignment;
+    alignedSize *= memRequirements.memoryRequirements.alignment;
+
+    VkMemoryAllocateInfo voxelMemoryAllocInfo = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = alignedSize * rcgd->problemSize,
+        .memoryTypeIndex = lolaVkFindMemoryType(memRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+
+    VK_CALL(vkAllocateMemory, vkDevice, &voxelMemoryAllocInfo, NULL, &vkVoxelMemory);
+
+    for (size_t i = 0; i < rcgd->problemSize; i++)
+        VK_CALL(vkBindImageMemory, vkDevice, vkVoxelBuffers[i], vkVoxelMemory, alignedSize * i);
+
+    // Create VkImageViews
     vkVoxelViews = calloc(rcgd->problemSize, sizeof(*vkVoxelViews));
     if (!vkVoxelBuffers)
         pdie("calloc");
@@ -290,10 +346,10 @@ static void lolaVkCreateResources(RabbitCtGlobalData *rcgd)
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = VK_FORMAT_R32_SFLOAT,
             .components = {
-                .r = VK_COMPONENT_SWIZZLE_R,
-                .g = VK_COMPONENT_SWIZZLE_R,
-                .b = VK_COMPONENT_SWIZZLE_R,
-                .a = VK_COMPONENT_SWIZZLE_R,
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
             },
             .subresourceRange = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -313,6 +369,8 @@ static void lolaVkDestroyResources(RabbitCtGlobalData *rcgd)
     for (size_t i = 0; i < rcgd->problemSize; i++)
         vkDestroyImageView(vkDevice, vkVoxelViews[i], NULL);
 
+    vkFreeMemory(vkDevice, vkVoxelMemory, NULL);
+
     for (size_t i = 0; i < rcgd->problemSize; i++)
         vkDestroyImage(vkDevice, vkVoxelBuffers[i], NULL);
 
@@ -324,7 +382,7 @@ extern unsigned int LolaVK_frag_spv_len;
 extern unsigned char LolaVK_vert_spv[];
 extern unsigned int LolaVK_vert_spv_len;
 
-static void lolaVkCreateShaders(const RabbitCtGlobalData *rcgd)
+static void lolaVkCreatePipeline(const RabbitCtGlobalData *rcgd)
 {
     // Shader modules
     VkShaderModuleCreateInfo vertCreateInfo = {
@@ -356,6 +414,11 @@ static void lolaVkCreateShaders(const RabbitCtGlobalData *rcgd)
         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
         .module = vkFragShaderModule,
         .pName = "main",
+    };
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {
+        vertShaderStageInfo,
+        fragShaderStageInfo,
     };
 
     // Dynamic state
@@ -424,6 +487,17 @@ static void lolaVkCreateShaders(const RabbitCtGlobalData *rcgd)
         .depthBiasSlopeFactor = 0.0f,
     };
 
+    // Multisampling
+    VkPipelineMultisampleStateCreateInfo multisampling = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .sampleShadingEnable = VK_FALSE,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .minSampleShading = 1.0f, // Optional
+        .pSampleMask = NULL, // Optional
+        .alphaToCoverageEnable = VK_FALSE, // Optional
+        .alphaToOneEnable = VK_FALSE, // Optional
+    };
+
     // Blending
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT,
@@ -445,7 +519,7 @@ static void lolaVkCreateShaders(const RabbitCtGlobalData *rcgd)
         .blendConstants = { 0.0f, 0.0f, 0.0f, 0.0f }, // Optional
     };
 
-    // Pipeline
+    // Pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 0, // Optional
@@ -455,13 +529,101 @@ static void lolaVkCreateShaders(const RabbitCtGlobalData *rcgd)
     };
 
     VK_CALL(vkCreatePipelineLayout, vkDevice, &pipelineLayoutInfo, NULL, &vkPipelineLayout);
+
+    // Render passes
+    VkAttachmentDescription colorAttachment = {
+        .format = VK_FORMAT_R32_SFLOAT,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    };
+
+    VkAttachmentReference colorAttachmentRef = {
+        .attachment = 0,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    VkSubpassDescription subpass = {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &colorAttachmentRef,
+    };
+
+    VkRenderPassCreateInfo renderPassInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &colorAttachment,
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+    };
+
+    VK_CALL(vkCreateRenderPass, vkDevice, &renderPassInfo, NULL, &vkRenderPass);
+
+    // Pipeline
+    VkGraphicsPipelineCreateInfo pipelineInfo = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = ARRAY_COUNT(shaderStages),
+        .pStages = shaderStages,
+        .pVertexInputState = &vertexInputInfo,
+        .pInputAssemblyState = &inputAssembly,
+        .pViewportState = &viewportState,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = NULL, // Optional
+        .pColorBlendState = &colorBlending,
+        .pDynamicState = &dynamicState,
+        .layout = vkPipelineLayout,
+        .renderPass = vkRenderPass,
+        .subpass = 0,
+    };
+
+    VK_CALL(vkCreateGraphicsPipelines, vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &vkPipeline);
 }
 
-static void lolaVkDestroyShaders(void)
+static void lolaVkDestroyPipeline(void)
 {
+    vkDestroyPipeline(vkDevice, vkPipeline, NULL);
+    vkDestroyRenderPass(vkDevice, vkRenderPass, NULL);
     vkDestroyPipelineLayout(vkDevice, vkPipelineLayout, NULL);
     vkDestroyShaderModule(vkDevice, vkFragShaderModule, NULL);
     vkDestroyShaderModule(vkDevice, vkVertShaderModule, NULL);
+}
+
+static void lolaVkCreateFramebuffers(RabbitCtGlobalData *rcgd)
+{
+    vkVoxelFramebuffers = calloc(rcgd->problemSize, sizeof(*vkVoxelFramebuffers));
+    if (!vkVoxelFramebuffers)
+        pdie("calloc");
+
+    for (size_t i = 0; i < rcgd->problemSize; i++) {
+        VkImageView attachments[] = {
+            vkVoxelViews[i],
+        };
+
+        VkFramebufferCreateInfo framebufferInfo = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = vkRenderPass,
+            .attachmentCount = 1,
+            .pAttachments = attachments,
+            .width = rcgd->problemSize,
+            .height = rcgd->problemSize,
+            .layers = 1,
+        };
+
+        VK_CALL(vkCreateFramebuffer, vkDevice, &framebufferInfo, NULL, &vkVoxelFramebuffers[i]);
+    }
+}
+
+static void lolaVkDestroyFramebuffers(RabbitCtGlobalData *rcgd)
+{
+    for (size_t i = 0; i < rcgd->problemSize; i++)
+        vkDestroyFramebuffer(vkDevice, vkVoxelFramebuffers[i], NULL);
+
+    free(vkVoxelFramebuffers);
 }
 
 int lolaVkPrepare(RabbitCtGlobalData *rcgd)
@@ -472,11 +634,15 @@ int lolaVkPrepare(RabbitCtGlobalData *rcgd)
     lolaVkQueueFamilyFind();
     lolaVkCreateLogicalDevice();
     lolaVkCreateResources(rcgd);
+    lolaVkCreatePipeline(rcgd);
+    lolaVkCreateFramebuffers(rcgd);
     return 1;
 }
 
 int lolaVkFinish(RabbitCtGlobalData *rcgd)
 {
+    lolaVkDestroyFramebuffers(rcgd);
+    lolaVkDestroyPipeline();
     lolaVkDestroyResources(rcgd);
     vkDestroyDevice(vkDevice, NULL);
     lolaVkDebugDestroy();
@@ -486,5 +652,7 @@ int lolaVkFinish(RabbitCtGlobalData *rcgd)
 
 int lolaVkBackprojection(RabbitCtGlobalData *rcgd)
 {
+    (void)rcgd;
+
     return 1;
 }
