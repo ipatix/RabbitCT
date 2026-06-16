@@ -124,6 +124,7 @@ extern "C" int lolaCudaBackprojection(RabbitCtGlobalData *rcgd)
             rcgd->voxelSize,
             rcgd->O_Index);
     }
+    cudaDeviceSynchronize();
 
     return 1;
 }
