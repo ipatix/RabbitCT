@@ -35,9 +35,11 @@ extern int lolaCudaPrepare(RabbitCtGlobalData *);
 extern int lolaCudaBackprojection(RabbitCtGlobalData *);
 extern int lolaCudaFinish(RabbitCtGlobalData *);
 
+#ifdef ENABLE_CUDA_TEX
 extern int lolaCudaTexPrepare(RabbitCtGlobalData *);
 extern int lolaCudaTexBackprojection(RabbitCtGlobalData *);
 extern int lolaCudaTexFinish(RabbitCtGlobalData *);
+#endif
 #endif
 
 /* ---- global function pointer variables ---- */

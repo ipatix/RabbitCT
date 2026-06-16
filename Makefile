@@ -50,6 +50,9 @@ OBJ       += $(patsubst $(SRC_DIR)/%.ispc, $(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR
 endif
 ifeq ($(ENABLE_CUDA),true)
 OBJ       += $(patsubst $(SRC_DIR)/%.cu, $(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR)/*.cu))
+ifneq ($(ENABLE_CUDA_TEX),true)
+OBJ       := $(filter-out $(BUILD_DIR)/LolaCUDATex.o,$(OBJ))
+endif
 endif
 include $(MAKE_DIR)/include_ISPC.mk
 SRC       =  $(wildcard $(SRC_DIR)/*.h $(SRC_DIR)/*.c)
