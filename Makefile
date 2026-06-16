@@ -79,8 +79,8 @@ $(BUILD_DIR)/%.o:  %.c $(MAKE_DIR)/include_$(TOOLCHAIN).mk config.mk
 	$(Q)$(CC) $(CPPFLAGS) -MT $(@:.d=.o) -MM  $< > $(BUILD_DIR)/$*.d
 
 $(BUILD_DIR)/%.o: %.cu $(MAKE_DIR)/include_$(TOOLCHAIN).mk config.mk
-	$(info ===>  COMPILE CUDA $@)
-	$(CC) -c $(CPPFLAGS) $(CFLAGS) $< -o $@
+	$(info ===>  COMPILE  $@)
+	$(CC) -c $(CPPFLAGS) $(CFLAGS) $(NVCCFLAGS) $< -o $@
 	$(Q)$(CC) $(CPPFLAGS) -MT $(@:.d=.o) -MM  $< > $(BUILD_DIR)/$*.d
 
 $(BUILD_DIR)/%.s:  %.c
