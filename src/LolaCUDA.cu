@@ -20,7 +20,7 @@ extern "C" int lolaCudaPrepare(RabbitCtGlobalData *rcgd)
 extern "C" int lolaCudaFinish(RabbitCtGlobalData *rcgd)
 {
     thrust::copy(gpuVoxels->begin(), gpuVoxels->end(), rcgd->volumeData);
-    cudaDeviceSynchronize();
+    (void)cudaDeviceSynchronize();
     gpuMatrices.reset();
     gpuImages.reset();
     gpuVoxels.reset();
@@ -124,7 +124,7 @@ extern "C" int lolaCudaBackprojection(RabbitCtGlobalData *rcgd)
             rcgd->voxelSize,
             rcgd->O_Index);
     }
-    cudaDeviceSynchronize();
+    (void)cudaDeviceSynchronize();
 
     return 1;
 }
