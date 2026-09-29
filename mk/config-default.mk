@@ -19,6 +19,10 @@ CUDA_ARCH ?= -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=s
 #       gfx942 # for MI300X & MI300A
 HIP_ARCH  ?= gfx1030,gfx942
 
+# Whether to enable the texture fetching based CUDA kernel.
+# Not supported on some AMD GPUs (via HIP)
+ENABLE_CUDA_TEX ?= true
+
 #Feature options
 OPTIONS +=  -DARRAY_ALIGNMENT=64
 OPTIONS +=  -DMAX_NUM_THREADS=128
