@@ -48,12 +48,6 @@ OBJ       += $(patsubst $(SRC_DIR)/%.S, $(BUILD_DIR)/%.o,$(SRC_DIR)/fastRabbit$(
 ifeq ($(ENABLE_ISPC),true)
 OBJ       += $(patsubst $(SRC_DIR)/%.ispc, $(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR)/*.ispc))
 endif
-ifeq ($(ENABLE_CUDA),true)
-OBJ       += $(patsubst $(SRC_DIR)/%.cu, $(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR)/*.cu))
-ifneq ($(ENABLE_CUDA_TEX),true)
-OBJ       := $(filter-out $(BUILD_DIR)/LolaCUDATex.o,$(OBJ))
-endif
-endif
 include $(MAKE_DIR)/include_ISPC.mk
 SRC       =  $(wildcard $(SRC_DIR)/*.h $(SRC_DIR)/*.c)
 CPPFLAGS := $(CPPFLAGS) $(DEFINES) $(OPTIONS) $(INCLUDES)
@@ -61,6 +55,9 @@ CPPFLAGS := $(CPPFLAGS) $(DEFINES) $(OPTIONS) $(INCLUDES)
 ifneq (,$(filter $(TOOLCHAIN),NVCC HIP))
   CPPFLAGS += -D_GPU
   OBJ   += $(patsubst $(SRC_DIR)/%.cu, $(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR)/*.cu))
+ifneq ($(ENABLE_CUDA_TEX),true)
+  OBJ   := $(filter-out $(BUILD_DIR)/LolaCUDATex.o,$(OBJ))
+endif
 endif
 
 c := ,
